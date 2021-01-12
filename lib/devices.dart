@@ -1,37 +1,48 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_blue/flutter_blue.dart';
+import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class DevicesPage extends StatefulWidget {
   DevicesPage({Key key}) : super(key: key);
-
-  final FlutterBlue flutterBlue = FlutterBlue.instance;
-  final List<BluetoothDevice> devicesList = [];
 
   @override
   _DevicesPageState createState() => _DevicesPageState();
 }
 
 class _DevicesPageState extends State<DevicesPage> {
+  StreamSubscription<BluetoothDiscoveryResult> listenSubscription;
+  List<BluetoothDiscoveryResult> devicesList = [];
+
   @override
   void initState() {
     super.initState();
-    widget.flutterBlue.connectedDevices
-        .asStream()
-        .listen((List<BluetoothDevice> devices) {
-      for (BluetoothDevice device in devices) {
-        _addDeviceTolist(device);
+    _startDiscovery();
+    // Scan
+  }
+
+  @override
+  void dispose() {
+    listenSubscription?.cancel();
+    // stop scan
+    super.dispose();
+  }
+
+  void _startDiscovery() {
+    devicesList.clear();
+    listenSubscription =
+        FlutterBluetoothSerial.instance.startDiscovery().listen((r) {
+      if (!devicesList.contains(r)) {
+        setState(() {
+          devicesList.add(r);
+        });
       }
     });
-    widget.flutterBlue.scanResults.listen((List<ScanResult> results) {
-      for (ScanResult result in results) {
-        _addDeviceTolist(result.device);
-      }
-    });
-    widget.flutterBlue.startScan().catchError((error) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text("There was a problem with your bluetooth support")));
-    });
+  }
+
+  void _stopDiscovery() {
+    FlutterBluetoothSerial.instance.cancelDiscovery();
   }
 
   @override
@@ -45,7 +56,7 @@ class _DevicesPageState extends State<DevicesPage> {
 
   ListView _buildListViewOfDevices() {
     List<Container> containers = [];
-    for (BluetoothDevice device in widget.devicesList) {
+    for (BluetoothDiscoveryResult device in devicesList) {
       containers.add(
         Container(
           height: 50,
@@ -54,8 +65,10 @@ class _DevicesPageState extends State<DevicesPage> {
               Expanded(
                 child: Column(
                   children: <Widget>[
-                    Text(device.name == '' ? '(Unknown device)' : device.name),
-                    Text(device.id.toString()),
+                    Text(device.device.name == '' || device.device.name == null
+                        ? '(Unknown device)'
+                        : device.device.name),
+                    Text(device.device.address.toString()),
                   ],
                 ),
               ),
@@ -66,10 +79,12 @@ class _DevicesPageState extends State<DevicesPage> {
                   style: TextStyle(color: Colors.white),
                 ),
                 onPressed: () {
-                  widget.flutterBlue.stopScan();
+                  _stopDiscovery();
                   SharedPreferences.getInstance().then((value) => {
-                        value.setString('bt.device', device.id.id),
-                        Navigator.of(context).pop(device.id.id)
+                        value.setString(
+                            'bt.device.address', device.device.address),
+                        value.setString('bt.device.name', device.device.name),
+                        Navigator.of(context).pop(device.device.address)
                       });
                 },
               ),
@@ -87,11 +102,11 @@ class _DevicesPageState extends State<DevicesPage> {
     );
   }
 
-  _addDeviceTolist(final BluetoothDevice device) {
-    if (!widget.devicesList.contains(device)) {
+  /*_addDeviceTolist(final BluetoothDiscoveryResult device) {
+    if (!devicesList.contains(device)) {
       setState(() {
-        widget.devicesList.add(device);
+        devicesList.add(device);
       });
     }
-  }
+  }*/
 }
